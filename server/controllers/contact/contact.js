@@ -12,15 +12,45 @@ const index = async (req, res) => {
     const query = req.query
     query.deleted = false;
 
-    let allData = await Contact.find(query).populate({
-        path: 'createBy',
-        match: { deleted: false } // Populate only if createBy.deleted is false
-    }).exec()
-
-    const result = allData.filter(item => item.createBy !== null);
+    let allData = await Contact.aggregate([
+        { $match: { ...query, deleted: false } },
+        {
+            $lookup: {
+                from: 'User',
+                localField: 'createBy',
+                foreignField: '_id',
+                as: 'createBy'
+            }
+        },
+        { $unwind: { path: '$createBy', preserveNullAndEmptyArrays: true } },
+        {
+            $addFields: {
+                firstName: {
+                    $cond: {
+                        if: { $ifNull: ['$fullName', false] },
+                        then: { $arrayElemAt: [{ $split: ['$fullName', ' '] }, 0] },
+                        else: ''
+                    }
+                },
+                lastName: {
+                    $cond: {
+                        if: { $ifNull: ['$fullName', false] },
+                        then: {
+                            $cond: {
+                                if: { $gt: [{ $size: { $split: ['$fullName', ' '] } }, 1] },
+                                then: { $arrayElemAt: [{ $split: ['$fullName', ' '] }, 1] },
+                                else: ''
+                            }
+                        },
+                        else: ''
+                    }
+                }
+            }
+        }
+    ]);
 
     try {
-        res.send(result)
+        res.send(allData)
     } catch (error) {
         res.send(error)
     }
@@ -75,7 +105,42 @@ const edit = async (req, res) => {
 
 const view = async (req, res) => {
     try {
-        let contact = await Contact.findOne({ _id: req.params.id });
+        let contact = await Contact.aggregate([
+            { $match: { _id: req.params.id } },
+            {
+                $lookup: {
+                    from: 'User',
+                    localField: 'createBy',
+                    foreignField: '_id',
+                    as: 'createBy'
+                }
+            },
+            { $unwind: { path: '$createBy', preserveNullAndEmptyArrays: true } },
+            {
+                $addFields: {
+                    firstName: {
+                        $cond: {
+                            if: { $ifNull: ['$fullName', false] },
+                            then: { $arrayElemAt: [{ $split: ['$fullName', ' '] }, 0] },
+                            else: ''
+                        }
+                    },
+                    lastName: {
+                        $cond: {
+                            if: { $ifNull: ['$fullName', false] },
+                            then: {
+                                $cond: {
+                                    if: { $gt: [{ $size: { $split: ['$fullName', ' '] } }, 1] },
+                                    then: { $arrayElemAt: [{ $split: ['$fullName', ' '] }, 1] },
+                                    else: ''
+                                }
+                            },
+                            else: ''
+                        }
+                    }
+                }
+            }
+        ]);
         let interestProperty = await Contact.findOne({ _id: req.params.id }).populate("interestProperty")
 
         if (!contact) return res.status(404).json({ message: 'No data found.' })
