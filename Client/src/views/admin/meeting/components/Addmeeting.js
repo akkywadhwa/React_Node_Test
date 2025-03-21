@@ -27,7 +27,6 @@ const AddMeeting = (props) => {
 
     const contactList = useSelector((state) => state?.contactData?.data)
 
-
     const initialValues = {
         agenda: '',
         attendes: props.leadContect === 'contactView' && props.id ? [props.id] : [],
@@ -43,22 +42,70 @@ const AddMeeting = (props) => {
         initialValues: initialValues,
         validationSchema: MeetingSchema,
         onSubmit: (values, { resetForm }) => {
-            
+            AddData();
         },
     });
     const { errors, touched, values, handleBlur, handleChange, handleSubmit, setFieldValue } = formik
 
     const AddData = async () => {
+        try {
+            setIsLoding(true)
+            if (!values.agenda || !values.dateTime || !values.related) {
+                toast.error('Please fill in all required fields');
+                return;
+            }
 
+            const selectedDate = new Date(values.dateTime);
+            const now = new Date();
+            if (selectedDate < now) {
+                toast.error('Meeting time cannot be in the past');
+                return;
+            }
+
+            let response = await postApi('api/meeting', { 
+                ...values, 
+                moduleId: props?.leadData?._id,
+                createdDate: new Date().toISOString()
+            });
+
+            if (response.status === 200) {
+                toast.success('Meeting added successfully');
+                props.onClose();
+                formik.resetForm();
+                props.setAction((pre) => !pre);
+                if (props.fetchData) {
+                    props.fetchData();
+                }
+            }
+        } catch (e) {
+            console.error("Error adding meeting:", e);
+            toast.error(e.response?.data?.message || 'Failed to add meeting. Please try again.');
+        }
+        finally {
+            setIsLoding(false)
+        }
     };
 
     const fetchAllData = async () => {
-        
+        try {
+            setIsLoding(true)
+            const [leadResponse, contactResponse] = await Promise.all([
+                getApi(user.role === 'superAdmin' ? 'api/lead/' : `api/lead/?createBy=${user._id}`),
+                getApi(user.role === 'superAdmin' ? 'api/contact/' : `api/contact/?createBy=${user._id}`)
+            ]);
+            setLeadData(leadResponse?.data)
+            setContactData(contactResponse?.data)
+        } catch (error) {
+            console.error("Error fetching data:", error);
+            toast.error('Failed to load contacts and leads');
+        } finally {
+            setIsLoding(false)
+        }
     }
 
     useEffect(() => {
-
-    }, [props.id, values.related])
+        fetchAllData()
+    }, [props.id, values.related]);
 
     const extractLabels = (selectedItems) => {
         return selectedItems.map((item) => item._id);
